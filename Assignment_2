@@ -1,0 +1,135 @@
+#################################
+#
+# CS312 - Professor Diamond
+# Assignment #2
+#
+# Submitted by: Ethan Lobdell
+#
+#################################
+
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(tidyverse)
+
+#Load dataset
+UN_data <- read.csv("https://tinyurl.com/UNpckpdata")
+
+#Check each column for missing values and/or NAs and drop the observations that have them.
+UN_data[UN_data == ""]<- NA
+UN_data.clean <- na.omit(UN_data)
+
+#Change the object class of the column containing the dates to object of “class” = Date.
+UN_data.clean$Last_Reporting_Date <- year(as.Date(UN_data.clean$Last_Reporting_Date,"%d/%m/%Y"))
+
+#Calculate % & Raw Total Formed Police Units by adding Female and Male Police units
+Female_Police_Units <- sum(UN_data.clean$Female_Personnel[UN_data.clean$Personnel_Type == "Formed Police Units"])
+Male_Police_Units <- sum(UN_data.clean$Male_Personnel[UN_data.clean$Personnel_Type == "Formed Police Units"])
+Total_Police_Units <- Female_Police_Units + Male_Police_Units
+Percent_Female_Police_Units <- Female_Police_Units / Total_Police_Units
+
+#Group police units by year by first filtering only the observations with
+# that have a personnel type = Formed Police Units
+# then grouping them by Last_reporting date (this is an end of month date and can lead to deviations from other
+# calculations)
+# Then create new columns total_male, total_police, percent_female
+police_units_by_year <- UN_data.clean %>%
+  filter(Personnel_Type == "Formed Police Units") %>%
+  group_by(Last_Reporting_Date) %>%
+  summarise(total_female = sum(Female_Personnel),
+            total_male = sum(Male_Personnel),
+            total_police = total_female + total_male,
+            percent_female = 100*(total_female / total_police))
+
+#create a new data_frame that only stores the data from the last 4 years
+last_four_years <- police_units_by_year[16:19,]
+#add the 
+female_28_goals <- c(2028,0,0,0,20)
+last_four_years <- rbind(last_four_years,female_28_goals)
+
+ggplot(last_four_years, aes(x = as.factor(Last_Reporting_Date), y = percent_female, fill = as.factor(Last_Reporting_Date))) + 
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values=c("#239CD3","#8CD7F6","#239CD3","#0C45A2","#0C55A2")) +
+  labs(x = "Year",y = "Percent of Total Units", title = "% WOMEN SERVING IN FORMED POLICE UNITS", align = "center") + 
+  geom_text(aes(label=paste(round(percent_female,1),"%",sep = ""),colour = as.factor(Last_Reporting_Date)), nudge_y = 1,size = 5) + 
+  geom_text(aes(label=Last_Reporting_Date), nudge_y = c(-5,-6.1,-8.7,-9.2,-18.2), color = "white",size = 5) + 
+  scale_colour_manual(values=c("#239CD3","#8CD7F6","#239CD3","#0C55A2","#0C55A2")) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_minimal()
+
+
+#step 6
+# FUNCTION by_country
+# Creates a list of all the unique missions that each Minerva country has sent personnel 
+# to over the entire timeline of the dataset
+# Input = ISO_Code
+# Prints unique missions
+# Output = Nulls
+by_country <- function(ISO_Code){
+
+  #filter UN_data by Input
+  missions_by_country <- UN_data %>%
+    filter(ISOCode3 == ISO_Code)
+  
+  print(paste("----------------------------",ISO_Code,"Unique Missions----------------"))
+  #Trim white space from each mission acronym & then store unique missions in Unique_missions data_frame
+  unique_missions <- unique(trimws(missions_by_country$Mission_Acronym))
+  print(unique_missions)
+  print(paste("=====",ISO_Code,"Total=",length(unique_missions),"======"))
+}
+
+#Loop through all minerva_country ISO codes and send to our by country function
+minerva_countries <- c("USA", "KOR", "IND","DEU","ARG","GBR")
+for(country in minerva_countries){
+   by_country(country)
+}
+
+#################   Step 7  ###################
+
+#zoom in on a specific mission: The UN Multidimensional Integrated Stabilization Mission in Mali (MINUSMA)
+Minusma_data <- UN_data %>%
+  filter(Mission_Acronym == "MINUSMA")
+#remove unneccessary columns
+Minusma_data <- Minusma_data[,-c(1,2,3,4,5)]
+
+# Obtain a dataframe that contains the total number of personnel, both male and female, 
+Minusma_data <- Minusma_data %>%
+  #calculate a new column of the total personnel
+  mutate(Total_Personnel = Female_Personnel + Male_Personnel) %>%
+ #seperate the date column into days, months, years
+  separate(Last_Reporting_Date, into = c("Day","Month","Year"))
+
+
+#create a new data_frame that groups all data by year and summarizes by the total_personnel
+by_month <- Minusma_data %>%
+  group_by(Year,Month) %>%
+  summarize(
+    total_personnel = sum(Total_Personnel),
+  )
+
+#Total Personnel Stationed at MINUSMA PER YEAR
+by_month
+ggplot(by_month, aes(x=Year,y=total_personnel, group = Month)) + 
+  geom_point(size = 3) + 
+  labs(title = "Total Personnel Stationed at Mission MINUSMA per Year", x = "Year", y = "Total Personnel") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+#   Min, Q1, Median, Q3, and Max number of troops stationed per year at MINUSMA
+max_month <- by_month[which.max(by_month$total_personnel),]
+min_month <- by_month[which.min(by_month$total_personnel),]
+
+#print out the max and min monthly troop populations and their respective months
+paste(max_month[3],"people was the maximum monthly # of troops stationed at MINUSMA on", max_month[2],",",max_month[1])
+paste(min_month[3],"people was the minimum monthly # of troops stationed at MINUSMA on", min_month[2],",",min_month[1])
+
+summary(by_month)
+
+#create a horizontal boxplot of the key statistics above
+ggplot(by_month, aes(x = , y = total_personnel, group = 1)) + 
+  coord_flip() + 
+  geom_boxplot(coef = 2.0, size = 1) +
+  theme_minimal() + 
+  labs(y = "Total Personnel per Month", title = "Box Plot of Monthly MINUSMA Personnel", align = "center")
+
+
+       
